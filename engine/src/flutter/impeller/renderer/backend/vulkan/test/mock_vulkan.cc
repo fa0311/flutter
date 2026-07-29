@@ -4,6 +4,7 @@
 
 #include "impeller/renderer/backend/vulkan/test/mock_vulkan.h"
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <utility>
@@ -618,7 +619,12 @@ VkResult vkCreateGraphicsPipelines(
     VkPipeline* pPipelines) {
   MockDevice* mock_device = MockDevice::Unwrap(device);
   mock_device->AddCalledFunction("vkCreateGraphicsPipelines");
-  *pPipelines = reinterpret_cast<VkPipeline>(0x99999999);
+  // Unique handles so tests can tell pipelines apart.
+  static std::atomic<uintptr_t> next_pipeline_handle = 0x99999999;
+  for (uint32_t i = 0u; i < createInfoCount; i++) {
+    pPipelines[i] =
+        reinterpret_cast<VkPipeline>(next_pipeline_handle.fetch_add(1u));
+  }
   return VK_SUCCESS;
 }
 

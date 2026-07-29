@@ -546,8 +546,12 @@ fml::Status RenderPassVK::Draw() {
   }
   const auto descriptor_set = descriptor_result.value();
   const auto pipeline_layout = pipeline_vk.GetPipelineLayout();
-  command_buffer_vk_.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                  pipeline_vk.GetPipeline());
+  const vk::Pipeline pipeline_handle = pipeline_vk.GetPipeline();
+  if (pipeline_handle != last_bound_pipeline_) {
+    command_buffer_vk_.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                    pipeline_handle);
+    last_bound_pipeline_ = pipeline_handle;
+  }
 
   for (auto i = 0u; i < descriptor_write_offset_; i++) {
     write_workspace_[i].dstSet = descriptor_set;

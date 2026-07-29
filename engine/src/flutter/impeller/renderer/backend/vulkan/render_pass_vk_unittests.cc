@@ -50,6 +50,52 @@ TEST(RenderPassVK, DoesNotRedundantlySetStencil) {
             2);
 }
 
+TEST(RenderPassVK, DoesNotRedundantlyBindPipeline) {
+  std::shared_ptr<ContextVK> context = MockVulkanContextBuilder().Build();
+  auto cmd_buffer = context->CreateCommandBuffer();
+
+  RenderTargetAllocator allocator(context->GetResourceAllocator());
+  RenderTarget target = allocator.CreateOffscreenMSAA(*context, {1, 1}, 1);
+
+  std::shared_ptr<RenderPass> render_pass =
+      cmd_buffer->CreateRenderPass(target);
+
+  PipelineDescriptor desc_a;
+  desc_a.SetVertexDescriptor(std::make_shared<VertexDescriptor>());
+  auto pipeline_a = context->GetPipelineLibrary()->GetPipeline(desc_a).Get();
+  ASSERT_TRUE(pipeline_a);
+
+  PipelineDescriptor desc_b;
+  desc_b.SetVertexDescriptor(std::make_shared<VertexDescriptor>());
+  desc_b.SetSampleCount(SampleCount::kCount4);
+  auto pipeline_b = context->GetPipelineLibrary()->GetPipeline(desc_b).Get();
+  ASSERT_TRUE(pipeline_b);
+
+  auto bind_pipeline_count = [&]() {
+    auto called_functions = GetMockVulkanFunctions(context->GetDevice());
+    return std::count(called_functions->begin(), called_functions->end(),
+                      "vkCmdBindPipeline");
+  };
+  ASSERT_EQ(bind_pipeline_count(), 0);
+
+  // Consecutive draws with the same pipeline bind it only once.
+  render_pass->SetPipeline(pipeline_a);
+  ASSERT_TRUE(render_pass->Draw().ok());
+  render_pass->SetPipeline(pipeline_a);
+  ASSERT_TRUE(render_pass->Draw().ok());
+  EXPECT_EQ(bind_pipeline_count(), 1);
+
+  // A different pipeline is bound.
+  render_pass->SetPipeline(pipeline_b);
+  ASSERT_TRUE(render_pass->Draw().ok());
+  EXPECT_EQ(bind_pipeline_count(), 2);
+
+  // Only the most recently bound pipeline is deduplicated.
+  render_pass->SetPipeline(pipeline_a);
+  ASSERT_TRUE(render_pass->Draw().ok());
+  EXPECT_EQ(bind_pipeline_count(), 3);
+}
+
 // Regression guard for the bug where `RenderPassVK::SetViewport` silently
 // dropped the user's X and Y offsets and the depth range, only honoring
 // width and height.

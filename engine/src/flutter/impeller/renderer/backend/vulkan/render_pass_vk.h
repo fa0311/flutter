@@ -35,6 +35,7 @@ class RenderPassVK final : public RenderPass {
   std::shared_ptr<Texture> color_image_vk_;
   std::shared_ptr<Texture> resolve_image_vk_;
   uint32_t current_stencil_ = 0;
+  vk::Pipeline last_bound_pipeline_ = VK_NULL_HANDLE;
 
   // Per-command state.
   std::array<vk::DescriptorImageInfo, kMaxBindings> image_workspace_;
