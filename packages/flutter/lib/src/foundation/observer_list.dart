@@ -81,6 +81,9 @@ class ObserverList<T> extends Iterable<T> {
   @override
   bool get isNotEmpty => _list.isNotEmpty;
 
+  @override
+  int get length => _list.length;
+
   /// Creates a List containing the elements of the [ObserverList].
   ///
   /// Overrides the default implementation of the [Iterable] to reduce number
@@ -148,13 +151,13 @@ class HashedObserverList<T> extends Iterable<T> {
   @override
   bool get isNotEmpty => _map.isNotEmpty;
 
+  @override
+  int get length => _map.length;
+
   /// Creates a List containing the elements of the [HashedObserverList].
   ///
   /// Overrides the default implementation of [Iterable] to reduce number of
   /// allocations.
   @override
-  List<T> toList({bool growable = true}) {
-    final Iterator<T> iterator = _map.keys.iterator;
-    return List<T>.generate(_map.length, (_) => (iterator..moveNext()).current, growable: growable);
-  }
+  List<T> toList({bool growable = true}) => _map.keys.toList(growable: growable);
 }
