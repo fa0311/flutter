@@ -553,6 +553,27 @@ public class PlatformViewsController2Test {
         .applyTransactionOnDraw(any(SurfaceControl.Transaction.class));
   }
 
+  @Test
+  @Config(shadows = {ShadowFlutterJNI.class, ShadowPlatformTaskQueue.class})
+  public void onEndFrameWithoutTransactionsIsANoOp() {
+    PlatformViewsController2 controller = new PlatformViewsController2();
+    PlatformViewRegistryImpl registry = new PlatformViewRegistryImpl();
+    controller.setRegistry(registry);
+
+    FlutterView mockFlutterView = mock(FlutterView.class);
+    AttachedSurfaceControl mockAttachedSurfaceControl = mock(AttachedSurfaceControl.class);
+    when(mockFlutterView.getRootSurfaceControl()).thenReturn(mockAttachedSurfaceControl);
+
+    controller.attachToView(mockFlutterView);
+
+    controller.swapTransactions();
+    controller.onEndFrame();
+
+    verify(mockFlutterView, never()).invalidate();
+    verify(mockAttachedSurfaceControl, never())
+        .applyTransactionOnDraw(any(SurfaceControl.Transaction.class));
+  }
+
   private static ByteBuffer encodeMethodCall(MethodCall call) {
     final ByteBuffer buffer = StandardMethodCodec.INSTANCE.encodeMethodCall(call);
     buffer.rewind();

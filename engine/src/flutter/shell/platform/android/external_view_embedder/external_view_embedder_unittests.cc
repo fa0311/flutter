@@ -1188,5 +1188,100 @@ TEST(AndroidExternalViewEmbedder2,
   embedder.reset();
 }
 
+TEST(AndroidExternalViewEmbedder2, EndsFrameOnlyWhileCleanupIsNeeded) {
+  auto jni_mock = std::make_shared<JNIMock>();
+  auto android_context =
+      std::make_shared<AndroidContext>(AndroidRenderingAPI::kSoftware);
+  ThreadHost thread_host("io.flutter.test." + GetCurrentTestName() + ".",
+                         ThreadHost::Type::kPlatform | ThreadHost::Type::kIo |
+                             ThreadHost::Type::kUi | ThreadHost::Type::kRaster);
+  TaskRunners task_runners(
+      "test",
+      thread_host.platform_thread->GetTaskRunner(),  // platform
+      thread_host.raster_thread->GetTaskRunner(),    // raster
+      thread_host.ui_thread->GetTaskRunner(),        // ui
+      thread_host.io_thread->GetTaskRunner()         // io
+  );
+  auto surface_factory = std::make_shared<TestAndroidSurfaceFactory>([]() {
+    auto android_surface = std::make_unique<AndroidSurfaceMock>();
+    EXPECT_CALL(*android_surface, IsValid()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*android_surface, SetNativeWindow(_, _))
+        .WillRepeatedly(Return(true));
+    EXPECT_CALL(*android_surface, CreateGPUSurface(_))
+        .WillRepeatedly(Return(ByMove(std::make_unique<SurfaceMock>())));
+    return android_surface;
+  });
+
+  fml::RefPtr<AndroidNativeWindow> window =
+      fml::MakeRefCounted<AndroidNativeWindow>(nullptr);
+  EXPECT_CALL(*jni_mock, createOverlaySurface2())
+      .WillRepeatedly(Return(
+          ByMove(std::make_unique<PlatformViewAndroidJNI::OverlayMetadata>(
+              0, window))));
+
+  auto embedder = std::make_unique<AndroidExternalViewEmbedder2>(
+      *android_context, jni_mock, surface_factory, task_runners);
+
+  const DlISize frame_size(100, 100);
+  const int64_t view_id = 42;
+  MutatorsStack mutators;
+  DlMatrix matrix = DlMatrix::MakeTranslation({0, 0});
+
+  {
+    ::testing::InSequence sequence;
+
+    // Frame 1 displays a platform view.
+    EXPECT_CALL(*jni_mock, onDisplayPlatformView2(view_id, 0, 0, 50, 50, 50, 50,
+                                                  mutators));
+    EXPECT_CALL(*jni_mock, swapTransaction());
+    EXPECT_CALL(*jni_mock, onEndFrame2());
+
+    // Frame 2 has no platform views and cleans up after frame 1.
+    EXPECT_CALL(*jni_mock, hidePlatformView2(view_id));
+    EXPECT_CALL(*jni_mock, swapTransaction());
+    EXPECT_CALL(*jni_mock, onEndFrame2());
+
+    // Frame 3 has no platform views and nothing to clean up: no more calls.
+  }
+
+  auto make_surface_frame = [&frame_size]() {
+    SurfaceFrame::FramebufferInfo framebuffer_info;
+    return std::make_unique<SurfaceFrame>(
+        SkSurfaces::Null(100, 100), framebuffer_info,
+        [](const SurfaceFrame& surface_frame, DlCanvas* canvas) {
+          return true;
+        },
+        [](const SurfaceFrame& surface_frame) { return true; },
+        /*frame_size=*/frame_size);
+  };
+
+  fml::AutoResetWaitableEvent latch;
+  fml::TaskRunner::RunNowOrPostTask(task_runners.GetRasterTaskRunner(), [&]() {
+    // Frame 1: with a platform view.
+    embedder->PrepareFlutterView(frame_size, 1.0);
+    embedder->PrerollCompositeEmbeddedView(
+        view_id,
+        std::make_unique<EmbeddedViewParams>(matrix, DlSize(50, 50), mutators));
+    embedder->CompositeEmbeddedView(view_id);
+    embedder->SubmitFlutterView(kImplicitViewId, nullptr, nullptr,
+                                make_surface_frame());
+
+    // Frames 2 and 3: without platform views.
+    embedder->PrepareFlutterView(frame_size, 1.0);
+    embedder->SubmitFlutterView(kImplicitViewId, nullptr, nullptr,
+                                make_surface_frame());
+    embedder->PrepareFlutterView(frame_size, 1.0);
+    embedder->SubmitFlutterView(kImplicitViewId, nullptr, nullptr,
+                                make_surface_frame());
+
+    fml::TaskRunner::RunNowOrPostTask(task_runners.GetPlatformTaskRunner(),
+                                      [&latch]() { latch.Signal(); });
+  });
+  latch.Wait();
+
+  embedder->Teardown();
+  embedder.reset();
+}
+
 }  // namespace testing
 }  // namespace flutter

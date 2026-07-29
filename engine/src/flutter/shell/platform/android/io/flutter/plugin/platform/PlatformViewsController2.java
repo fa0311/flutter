@@ -667,6 +667,9 @@ public class PlatformViewsController2 implements PlatformViewsAccessibilityDeleg
 
   @RequiresApi(API_LEVELS.API_34)
   public void onEndFrame() {
+    if (activeTransactions.isEmpty()) {
+      return;
+    }
     SurfaceControl.Transaction tx = new SurfaceControl.Transaction();
     for (int i = 0; i < activeTransactions.size(); i++) {
       tx = tx.merge(activeTransactions.get(i));
